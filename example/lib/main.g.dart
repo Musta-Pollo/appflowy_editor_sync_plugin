@@ -1734,7 +1734,7 @@ final documentsProvider = NotifierProvider<Documents, List<Document>>.internal(
 
 typedef _$Documents = Notifier<List<Document>>;
 String _$editorStateWrapperHash() =>
-    r'41ee2d3178f93d9e1b4078b6e7b9ee8c25556f05';
+    r'1e4dfcdac596cbac921dec4336e0ffdc2b1e4e07';
 
 abstract class _$EditorStateWrapper
     extends BuildlessAsyncNotifier<EditorState> {
