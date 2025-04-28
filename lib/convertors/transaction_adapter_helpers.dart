@@ -8,6 +8,7 @@ import 'package:appflowy_editor_sync_plugin/extensions/document_extensions.dart'
 import 'package:appflowy_editor_sync_plugin/extensions/operation_extensions.dart';
 import 'package:appflowy_editor_sync_plugin/src/rust/doc/document_types.dart';
 import 'package:appflowy_editor_sync_plugin/types/operation_wrapper.dart';
+import 'package:dartx/dartx.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
 
@@ -49,6 +50,8 @@ class TransactionAdapterHelpers {
   ) {
     final wrappers = <OperationWrapper>[];
 
+    //Sort operations so that delete comes before insert
+
     for (var i = 0; i < operations.length; i++) {
       final op = operations[i];
 
@@ -56,10 +59,8 @@ class TransactionAdapterHelpers {
       if (op is DeleteOperation && i + 1 < operations.length) {
         final nextOp = operations[i + 1];
         if (nextOp is InsertOperation && _isMoveOperation(op, nextOp)) {
-          final node = op.nodes.first;
           wrappers.add(
             OperationWrapper(
-              node: node,
               type: OperationWrapperType.Move,
               firstOperation: op,
               optionalSecondOperation: Some(nextOp),
@@ -70,34 +71,28 @@ class TransactionAdapterHelpers {
         }
       }
 
+      /////
+      // CURRENTLY IT ASSUMES THAT THERE IS ONLY ONE NODE EACH TIME!!!!!!
       // Handle other operation types
       if (op is InsertOperation) {
-        for (final node in op.nodes) {
-          wrappers.add(
-            OperationWrapper(
-              node: node,
-              type: OperationWrapperType.Insert,
-              firstOperation: op,
-              optionalSecondOperation: const None(),
-            ),
-          );
-        }
-      } else if (op is DeleteOperation) {
-        for (final node in op.nodes) {
-          wrappers.add(
-            OperationWrapper(
-              node: node,
-              type: OperationWrapperType.Delete,
-              firstOperation: op,
-              optionalSecondOperation: const None(),
-            ),
-          );
-        }
-      } else if (op is UpdateOperation) {
-        final node = editorStateWrapper.editorState.getNodeAtPath(op.path)!;
         wrappers.add(
           OperationWrapper(
-            node: node,
+            type: OperationWrapperType.Insert,
+            firstOperation: op,
+            optionalSecondOperation: const None(),
+          ),
+        );
+      } else if (op is DeleteOperation) {
+        wrappers.add(
+          OperationWrapper(
+            type: OperationWrapperType.Delete,
+            firstOperation: op,
+            optionalSecondOperation: const None(),
+          ),
+        );
+      } else if (op is UpdateOperation) {
+        wrappers.add(
+          OperationWrapper(
             type: OperationWrapperType.Update,
             firstOperation: op,
             optionalSecondOperation: const None(),
@@ -113,12 +108,11 @@ class TransactionAdapterHelpers {
     List<OperationWrapper> wrapped,
     EditorStateWrapper editorStateWrapper,
   ) {
-    return wrapped
-        .map((e) {
-          return operationWrapperToBlockActions(e, editorStateWrapper);
-        })
-        .flatten
-        .toList();
+    return IterableIterableX(
+      wrapped.map((e) {
+        return operationWrapperToBlockActions(e, editorStateWrapper);
+      }),
+    ).flatten().toList();
   }
 
   //Converting OperationWrapper to BlockActionDoc

@@ -30,18 +30,25 @@ extension on InsertOperation {
     Node? nextNode,
     Node? parentNode,
   }) {
+    var insertPath = path;
     var currentPath = path;
     final actions = <BlockActionDoc>[];
-    for (final node in nodes) {
+    // Track previous node between iterations
+    Node? currentPreviousNode = previousNode;
+
+    // For multiple nodes, we need to handle the connections between them
+    final nodesList = nodes.toList();
+
+    for (int i = 0; i < nodesList.length; i++) {
+      final node = nodesList[i];
+      final isLastNodeInBatch = i == nodesList.length - 1;
+
       final parentId =
           parentNode?.id ??
           TransactionAdapterHelpers.parentFromPath(
             editorStateWrapper.editorState.document,
             currentPath,
           ).id;
-      // node.parent?.id ??
-      //     editorStateWrapper.getNodeAtPath(currentPath.parent)?.id ??
-      //     '';
       assert(parentId.isNotEmpty);
 
       var prevId = '';
@@ -50,32 +57,39 @@ extension on InsertOperation {
 
       if (!isFirstChild) {
         prevId =
-            previousNode?.id ??
-            editorStateWrapper.getNodeAtPath(currentPath.previous)?.id ??
+            currentPreviousNode?.id ??
+            editorStateWrapper.getNodeAtPath(insertPath.previous)?.id ??
             '';
       }
 
+      //THE NEXT ID IS ONLY USED WHN PREVID = NULL
       var nextId = '';
 
-      //If the node is the last child of the parent, then its nextId should be empty.
-      final isLastChild = currentPath.next.equals(currentPath);
-      if (!isLastChild) {
-        // Special case for insertion at position [0]
-        if (currentPath.length == 1 && currentPath[0] == 0) {
-          // Directly get the first child of the document
-          nextId = editorStateWrapper.getNodeAtPath([0])?.id ?? "";
-        } else {
-          nextId = editorStateWrapper.getNodeAtPath(currentPath.next)?.id ?? '';
+      // If this isn't the last node in our batch, the next ID should be the next node in our batch
+      if (!isLastNodeInBatch) {
+        nextId = nodesList[i + 1].id;
+      } else {
+        // For the last node, use the regular nextId logic
+        //This will be true only if the path is empty
+        final isLastChild = currentPath.next.equals(currentPath);
+        if (!isLastChild) {
+          // Special case for insertion at position [0]
+          if (currentPath.isNotEmpty && currentPath.last == 0) {
+            // Directly get the first child of the document
+            nextId = editorStateWrapper.getNodeAtPath(insertPath)?.id ?? "";
+          } else {
+            nextId =
+                nextNode?.id ??
+                editorStateWrapper.getNodeAtPath(insertPath.next)?.id ??
+                '';
+          }
         }
       }
 
       //If I have a parent from insert, don't share nextid
-      if (parentNode != null) {
+      if (parentNode != null && isLastNodeInBatch) {
         nextId = '';
       }
-
-      //TODO: Maybe use prevID to set it faste the previous node if it exists
-      // BUt currently it seems to me that it should work well enough with just the indexes
 
       // create the external text if the node contains the delta in its data.
       final delta = node.delta;
@@ -108,6 +122,7 @@ extension on InsertOperation {
       );
 
       actions.add(blockAction);
+
       if (node.children.isNotEmpty) {
         Node? prevChild;
         for (final child in node.children) {
@@ -121,7 +136,9 @@ extension on InsertOperation {
           prevChild = child;
         }
       }
-      previousNode = node;
+
+      // Update the previous node for the next iteration
+      currentPreviousNode = node;
       currentPath = currentPath.next;
     }
 

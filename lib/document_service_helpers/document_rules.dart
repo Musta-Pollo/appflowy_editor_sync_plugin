@@ -52,30 +52,42 @@ class DocumentRules {
 
     findHeadingNodesWithChildren(document.root);
 
+    final operations = <Operation>[];
+
     // Process each heading node - move its children after it
     for (final headingNode in headingNodes) {
       final headingPath = headingNode.path;
       final parentPath = headingPath.parent;
       final insertPosition = headingPath.last + 1;
 
-      // Keep track of how many nodes we've inserted so far
-      int offset = 0;
+      final childrenCopy = List<Node>.from(
+        headingNode.children.map((e) => Node.fromJson(e.toJson())),
+      );
 
-      // Move each child after the heading node
-      final children = List<Node>.from(
-        headingNode.children,
-      ); // Create a copy to iterate
-      for (final child in children) {
-        // Insert the child after the heading + offset
-        final targetPath = [...parentPath, insertPosition + offset];
-        transaction.moveNode(targetPath, child);
-        offset++;
+      // Create a delete operation for all children at once
+      if (headingNode.children.isNotEmpty) {
+        final deleteOperation = DeleteOperation(
+          [...headingPath, 0], // Start at the first child
+          List.from(headingNode.children), // Use original nodes for deletion
+        );
+        operations.add(deleteOperation);
       }
+
+      final targetPath = [...parentPath, insertPosition];
+
+      operations.add(InsertOperation(targetPath, childrenCopy));
+    }
+
+    // Add all operations to the transaction
+    for (final operation in operations) {
+      transaction.add(operation);
     }
 
     if (transaction.operations.isEmpty) {
       return;
     }
+
+    final prevOperations = transaction.operations;
 
     final adjustedOperations = adjustOperations(transaction.operations);
     transaction.operations.clear();

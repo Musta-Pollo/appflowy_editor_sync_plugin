@@ -12,10 +12,8 @@ enum OperationWrapperType { Insert, Delete, Move, Update }
 // }
 
 class OperationWrapper {
-  final Node node;
   final OperationWrapperType type;
   OperationWrapper({
-    required this.node,
     required this.type,
     required this.firstOperation,
     required this.optionalSecondOperation,
