@@ -114,13 +114,13 @@ pub fn apply_action(
         log_info!("apply_updates: Starting with {} updates for doc_id: {}", updates.len(), self.doc_id);
         
         // Create a new document to apply updates to
-        let new_doc = Doc::new();
+        // let new_doc = Doc::new();
         
         // Apply updates to the new document
-        let result = UpdateOperations::apply_updates_inner(new_doc.clone(), &self.doc_id, updates)?;
+        let result = UpdateOperations::apply_updates_inner(self.doc.clone(), &self.doc_id, updates)?;
         
         // Replace the current document with the new one
-        self.doc = new_doc;
+        // self.doc = new_doc;
         
         log_info!("apply_updates: Successfully applied updates for doc_id: {}", self.doc_id);
         Ok(result)

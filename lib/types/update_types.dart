@@ -8,5 +8,6 @@ class LocalUpdate {
 
 class DbUpdate {
   final Uint8List update;
-  DbUpdate({required this.update});
+  final String id;
+  DbUpdate({required this.update, required this.id});
 }

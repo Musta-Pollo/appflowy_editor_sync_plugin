@@ -24,7 +24,7 @@ import 'package:uuid/uuid.dart';
 class EditorStateSyncWrapper {
   EditorStateSyncWrapper({
     required this.syncAttributes,
-    this.syncDebounceDelay = const Duration(milliseconds: 1500),
+    this.syncDebounceDelay = const Duration(milliseconds: 0),
     this.updatesBatcherDebounceDuration = const Duration(milliseconds: 500),
   });
 
@@ -52,6 +52,9 @@ class EditorStateSyncWrapper {
   bool isSyncing = false;
 
   final String _syncProcessingTag = 'sync_processing_${Uuid().v4()}';
+
+  final Set<String> _processedServerUpdatesIds = {};
+  final Set<String> _processedLocalUpdatesIds = {};
 
   (List<LocalUpdate>, List<DbUpdate>)? pendingSyncUpdates;
 
@@ -165,11 +168,13 @@ class EditorStateSyncWrapper {
       return;
     }
 
+    final filteredUpdates = _getUnprocessedUpdates(updates);
+
     try {
       await docService.applyUpdates(
         update:
-            updates.$1.map((e) => e.update).toList() +
-            updates.$2.map((e) => e.update).toList(),
+            filteredUpdates.$1.map((e) => e.update).toList() +
+            filteredUpdates.$2.map((e) => e.update).toList(),
       );
     } catch (e) {
       print(e);
@@ -196,18 +201,45 @@ class EditorStateSyncWrapper {
       newEditorStateWrapper,
     );
     if (diffOperations.isEmpty) {
+      _markLocalUpdatesAsProccessed(updates);
       return;
     }
 
     if (diffOperations.isNotEmpty) {
       // Apply the operations to the editor state
       editorStateWrapper.applyRemoteChanges(diffOperations);
+      _markLocalUpdatesAsProccessed(updates);
       // _prettyfyAndPrintInChunksDocumentState(result);
 
       debugPrintCustom(
         "Applied ${diffOperations.length} operations to the editor state",
       );
     }
+  }
+
+  void _markLocalUpdatesAsProccessed(
+    (List<LocalUpdate>, List<DbUpdate>) updates,
+  ) {
+    final localUpdates = updates.$1;
+    final dbUpdates = updates.$2;
+
+    _processedLocalUpdatesIds.addAll(localUpdates.map((e) => e.id));
+    _processedServerUpdatesIds.addAll(dbUpdates.map((e) => e.id));
+  }
+
+  (List<LocalUpdate>, List<DbUpdate>) _getUnprocessedUpdates(
+    (List<LocalUpdate>, List<DbUpdate>) updates,
+  ) {
+    final localUpdates =
+        updates.$1
+            .where((e) => !_processedLocalUpdatesIds.contains(e.id))
+            .toList();
+    final dbUpdates =
+        updates.$2
+            .where((e) => !_processedServerUpdatesIds.contains(e.id))
+            .toList();
+
+    return (localUpdates, dbUpdates);
   }
 
   void _prettyfyAndPrintInChunksDocumentState(DocumentState docState) {
