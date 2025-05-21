@@ -17,6 +17,7 @@ class DocumentRules {
     ]);
   }
 
+  /// Ensure that there is at least one paragraph in the document, otherwise the user will be blocked from typing
   Future<void> _ensureAtLeastOneParagraphExists({
     required EditorTransactionValue value,
   }) async {

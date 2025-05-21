@@ -2,6 +2,7 @@ use yrs::updates::decoder::Decode;
 use yrs::{merge_updates_v2, Array, Doc, Map, ReadTxn, StateVector, Transact, Update};
 use std::collections::HashMap;
 
+use crate::doc::conversions::conversion::Conversion;
 use crate::doc::document_types::{BlockDoc, CustomRustError, DocumentState, FailedToDecodeUpdates};
 use crate::doc::error::DocError;
 use crate::doc::utils::sorting::ChainSorting;
@@ -104,7 +105,7 @@ impl UpdateOperations {
                 use crate::doc::operations::delta_ops::DeltaOperations;
                 
                 let deltas = text.delta(txn);
-                match DeltaOperations::deltas_to_json(txn, deltas) {
+                match Conversion::deltas_to_json(txn, deltas) {
                     Ok(json_deltas) => {
                         match serde_json::to_string(&json_deltas) {
                             Ok(s) => Some(s),

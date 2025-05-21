@@ -7,10 +7,7 @@ pub mod util;
 pub mod sorting_test;
 
 /// flutter_rust_bridge:ignore
-pub mod another_tests2;
-
-/// flutter_rust_bridge:ignore
-pub mod another_test3;
+pub mod sorting_test2;
 
 
 /// flutter_rust_bridge:ignore

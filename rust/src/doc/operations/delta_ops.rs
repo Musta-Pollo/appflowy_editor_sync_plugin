@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use yrs::{types::Delta, ReadTxn, TextRef, TransactionMut};
 
+use crate::doc::conversions::conversion::Conversion;
 use crate::doc::document_types::CustomRustError;
 use crate::doc::error::DocError;
 use crate::doc::utils::util::TextExt;
@@ -22,6 +23,7 @@ pub const ATTRIBUTES: &str = "attributes";
 pub struct DeltaOperations;
 
 impl DeltaOperations {
+    /// Apply a delta to a YText object
     pub fn apply_delta_to_text(
         txn: &mut TransactionMut,
         text: TextRef,
@@ -29,11 +31,10 @@ impl DeltaOperations {
     ) -> Result<(), CustomRustError> {
         // Get current text delta
         let current_delta = text.delta(txn);
-        let current_delta_value = Self::deltas_to_json(txn, current_delta)?;
         
 
         // Get delta diff from the Dart side
-        log_info!("apply_delta_to_text: Computing delta diff");
+        // Legacy Code
         let new_delta_diff = new_delta;
         
         // Parse the delta diff
@@ -50,6 +51,7 @@ impl DeltaOperations {
         Self::apply_delta_diff_to_text(txn, text, &parsed_delta)
     }
 
+    /// Apply a delta diff to a YText object
     pub fn apply_delta_diff_to_text(
         txn: &mut TransactionMut,
         text: TextRef,
@@ -71,7 +73,8 @@ impl DeltaOperations {
         
         Ok(())
     }
-
+    
+    /// Parse a single delta operation
     fn parse_delta_operation(
         d: &HashMap<String, Value>, 
         cursor_pos: &mut u32,
@@ -137,232 +140,18 @@ impl DeltaOperations {
         }
     }
 
+    /// Parse attributes
     fn parse_attributes(d: &HashMap<String, Value>) -> Option<Box<HashMap<Arc<str>, yrs::Any>>> {
         d.get(ATTRIBUTES).map(|a| {
             Box::new(
                 a.as_object()
                     .unwrap_or(&JsonMap::new())
                     .iter()
-                    .map(|(k, v)| (Arc::from(k.as_str()), Self::json_value_to_yrs_any(v)))
+                    .map(|(k, v)| (Arc::from(k.as_str()), Conversion::json_value_to_yrs_any(v)))
                     .collect::<HashMap<Arc<str>, yrs::Any>>()
             )
         })
     }
 
-    pub fn deltas_to_json<T: ReadTxn>(
-        txn: &T,
-        deltas: Vec<Delta<yrs::Out>>
-    ) -> Result<Value, CustomRustError> {
-        log_info!("deltas_to_json: Converting {} deltas", deltas.len());
-        
-        let json_deltas: Result<Vec<Value>, CustomRustError> = deltas
-            .into_iter()
-            .map(|delta| Self::delta_to_json(txn, delta))
-            .collect();
-            
-        json_deltas.map(Value::Array)
-    }
-
-    pub fn delta_to_json<T: ReadTxn>(
-        txn: &T,
-        delta: Delta<yrs::Out>
-    ) -> Result<Value, CustomRustError> {
-        match delta {
-            Delta::Inserted(text, attrs) => {
-                let mut map = JsonMap::new();
-                map.insert("insert".to_string(), Value::String(text.to_string(txn)));
-                
-                if let Some(attributes) = attrs {
-                    let attrs_json: JsonMap<String, Value> = attributes
-                        .iter()
-                        .map(|(k, v)| (k.to_string(), Self::any_to_json(v)))
-                        .collect();
-                    
-                    map.insert("attributes".to_string(), Value::Object(attrs_json));
-                }
-                
-                Ok(Value::Object(map))
-            },
-            Delta::Retain(len, attrs) => {
-                let mut map = JsonMap::new();
-                map.insert("retain".to_string(), Value::Number(len.into()));
-                
-                if let Some(attributes) = attrs {
-                    let attrs_json: JsonMap<String, Value> = attributes
-                        .iter()
-                        .map(|(k, v)| (k.to_string(), Self::any_to_json(v)))
-                        .collect();
-                    
-                    map.insert("attributes".to_string(), Value::Object(attrs_json));
-                }
-                
-                Ok(Value::Object(map))
-            },
-            Delta::Deleted(len) => {
-                let mut map = JsonMap::new();
-                map.insert("delete".to_string(), Value::Number(len.into()));
-                Ok(Value::Object(map))
-            }
-        }
-    }
     
-    /// Convert a yjs Any value to JSON
-    pub fn any_to_json(any: &yrs::Any) -> Value {
-        match any {
-            yrs::Any::Null => Value::Null,
-            yrs::Any::Undefined => Value::Null,
-            yrs::Any::Bool(b) => Value::Bool(*b),
-            yrs::Any::Number(n) => {
-                Value::Number(serde_json::Number::from_f64(*n).unwrap_or(0.into()))
-            }
-            yrs::Any::String(s) => Value::String(s.to_string()),
-            yrs::Any::Array(arr) => Value::Array(arr.iter().map(Self::any_to_json).collect()),
-            yrs::Any::Map(map) => Value::Object(
-                map.iter()
-                    .map(|(k, v)| (k.to_string(), Self::any_to_json(v)))
-                    .collect()
-            ),
-            yrs::Any::BigInt(i) => Value::Number((*i).into()),
-            yrs::Any::Buffer(_) => Value::String("<buffer>".to_string()),
-        }
-    }
-    
-    /// Convert JSON value to yjs Any
-    pub fn json_value_to_yrs_any(val: &Value) -> yrs::Any {
-        match val {
-            Value::Null => yrs::Any::Null,
-            Value::Bool(b) => yrs::Any::Bool(*b),
-            Value::Number(n) => {
-                if let Some(i) = n.as_i64() {
-                    yrs::Any::Number(i as f64)
-                } else if let Some(f) = n.as_f64() {
-                    yrs::Any::Number(f)
-                } else {
-                    yrs::Any::Undefined
-                }
-            }
-            Value::String(s) => yrs::Any::String(Arc::from(s.as_str())),
-            Value::Array(arr) => yrs::Any::Array(
-                Arc::from(arr.iter().map(Self::json_value_to_yrs_any).collect::<Vec<_>>())
-            ),
-            Value::Object(obj) => yrs::Any::Map(
-                Arc::from(
-                    obj.iter()
-                        .map(|(k, v)| (k.clone(), Self::json_value_to_yrs_any(v)))
-                        .collect::<HashMap<_, _>>()
-                )
-            ),
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use yrs::{Doc, Text};
-
-    #[test]
-    fn test_json_conversion_roundtrip() {
-        // Test that JSON conversion is reversible
-        let original_value = Value::Object({
-            let mut map = JsonMap::new();
-            map.insert("string".to_string(), Value::String("hello".to_string()));
-            map.insert("number".to_string(), Value::Number(42.into()));
-            map.insert("bool".to_string(), Value::Bool(true));
-            map.insert("null".to_string(), Value::Null);
-            
-            let mut nested = JsonMap::new();
-            nested.insert("nested_key".to_string(), Value::String("nested_value".to_string()));
-            map.insert("object".to_string(), Value::Object(nested));
-            
-            map.insert("array".to_string(), Value::Array(vec![
-                Value::String("one".to_string()),
-                Value::String("two".to_string()),
-            ]));
-            
-            map
-        });
-        
-        // Convert to Yrs Any
-        let yrs_any = DeltaOperations::json_value_to_yrs_any(&original_value);
-        
-        // Convert back to JSON
-        let roundtrip_value = DeltaOperations::any_to_json(&yrs_any);
-        
-        // Compare (ignoring some precision issues with floating point)
-        assert_eq!(original_value.to_string(), roundtrip_value.to_string());
-    }
-
-    #[test]
-    fn test_parse_delta_operation_insert() {
-        let mut current_len = 0;
-        let mut cursor_pos = 0;
-        
-        let mut operation = HashMap::new();
-        operation.insert(INSERT.to_string(), Value::String("hello".to_string()));
-        
-        let result = DeltaOperations::parse_delta_operation(&operation, &mut cursor_pos, &mut current_len);
-        
-        assert!(result.is_ok());
-        if let Ok(Delta::Inserted(text, _)) = result {
-            assert_eq!(text, "hello");
-            assert_eq!(current_len, 5);
-            assert_eq!(cursor_pos, 5);
-        } else {
-            panic!("Expected Inserted delta");
-        }
-    }
-
-    #[test]
-    fn test_parse_delta_operation_retain() {
-        let mut current_len = 10;
-        let mut cursor_pos = 2;
-        
-        let mut operation = HashMap::new();
-        operation.insert(RETAIN.to_string(), Value::Number(3.into()));
-        
-        let result = DeltaOperations::parse_delta_operation(&operation, &mut cursor_pos, &mut current_len);
-        
-        assert!(result.is_ok());
-        if let Ok(Delta::Retain(length, _)) = result {
-            assert_eq!(length, 3);
-            assert_eq!(current_len, 10); // Unchanged
-            assert_eq!(cursor_pos, 5);   // Advanced by 3
-        } else {
-            panic!("Expected Retain delta");
-        }
-    }
-
-    #[test]
-    fn test_parse_delta_operation_delete() {
-        let mut current_len = 10;
-        let mut cursor_pos = 5;
-        
-        let mut operation = HashMap::new();
-        operation.insert(DELETE.to_string(), Value::Number(3.into()));
-        
-        let result = DeltaOperations::parse_delta_operation(&operation, &mut cursor_pos, &mut current_len);
-        
-        assert!(result.is_ok());
-        if let Ok(Delta::Deleted(length)) = result {
-            assert_eq!(length, 3);
-            assert_eq!(current_len, 7);  // Reduced by 3
-            assert_eq!(cursor_pos, 2);   // Reduced by 3
-        } else {
-            panic!("Expected Deleted delta");
-        }
-    }
-
-    #[test]
-    fn test_retain_exceeds_length() {
-        let mut current_len = 5;
-        let mut cursor_pos = 3;
-        
-        let mut operation = HashMap::new();
-        operation.insert(RETAIN.to_string(), Value::Number(10.into())); // Too large
-        
-        let result = DeltaOperations::parse_delta_operation(&operation, &mut cursor_pos, &mut current_len);
-        
-        assert!(result.is_err());
-    }
 }

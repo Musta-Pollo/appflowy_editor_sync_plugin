@@ -21,7 +21,6 @@ extension OperationSplitter on List<Operation> {
         }
       } else if (operation is InsertOperation && operation.nodes.length > 1) {
         // Split insert operation
-        // Split insert operation
         for (int i = 0; i < operation.nodes.length; i++) {
           final node = operation.nodes.elementAt(i);
           final path = [...operation.path];

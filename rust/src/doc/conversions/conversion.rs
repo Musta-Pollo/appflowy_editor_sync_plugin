@@ -7,60 +7,26 @@ use crate::doc::document_types::{BlockDoc, DocumentState};
 use crate::doc::constants::{ID, TYPE, PARENT_ID, PREV_ID, TEXT, ATTRIBUTES};
 use crate::doc::error::DocError;
 use crate::doc::document_types::CustomRustError;
+use crate::log_info;
 
 /// Utilities for converting between different data representations
 pub struct Conversion;
 
 impl Conversion {
-    /// Convert a Yrs Any value to a JSON Value
-    pub fn yrs_any_to_json(any: &YrsAny) -> Value {
-        match any {
-            YrsAny::Null => Value::Null,
-            YrsAny::Undefined => Value::Null,
-            YrsAny::Bool(b) => Value::Bool(*b),
-            YrsAny::Number(n) => {
-                Value::Number(serde_json::Number::from_f64(*n).unwrap_or(0.into()))
-            }
-            YrsAny::String(s) => Value::String(s.to_string()),
-            YrsAny::Array(arr) => Value::Array(
-                arr.iter().map(Self::yrs_any_to_json).collect()
-            ),
-            YrsAny::Map(map) => Value::Object(
-                map.iter()
-                   .map(|(k, v)| (k.to_string(), Self::yrs_any_to_json(v)))
-                   .collect()
-            ),
-            YrsAny::BigInt(i) => Value::Number((*i).into()),
-            YrsAny::Buffer(_) => Value::String("<buffer>".to_string()),
-        }
-    }
-
-    /// Convert a JSON Value to a Yrs Any
-    pub fn json_to_yrs_any(value: &Value) -> YrsAny {
-        match value {
-            Value::Null => YrsAny::Null,
-            Value::Bool(b) => YrsAny::Bool(*b),
-            Value::Number(n) => {
-                if let Some(i) = n.as_i64() {
-                    YrsAny::Number(i as f64)
-                } else if let Some(f) = n.as_f64() {
-                    YrsAny::Number(f)
-                } else {
-                    YrsAny::Undefined
-                }
-            }
-            Value::String(s) => YrsAny::String(Arc::from(s.as_str())),
-            Value::Array(arr) => YrsAny::Array(
-                Arc::from(arr.iter().map(Self::json_to_yrs_any).collect::<Vec<_>>())
-            ),
-            Value::Object(obj) => YrsAny::Map(
-                Arc::from(
-                    obj.iter()
-                        .map(|(k, v)| (k.clone(), Self::json_to_yrs_any(v)))
-                        .collect::<HashMap<_, _>>()
-                )
-            ),
-        }
+    
+    /// Convert a vector of deltas to JSON
+    pub fn deltas_to_json<T: ReadTxn>(
+        txn: &T,
+        deltas: Vec<Delta<yrs::Out>>
+    ) -> Result<Value, CustomRustError> {
+        log_info!("deltas_to_json: Converting {} deltas", deltas.len());
+        
+        let json_deltas: Result<Vec<Value>, CustomRustError> = deltas
+            .into_iter()
+            .map(|delta| Self::delta_to_json(txn, delta))
+            .collect();
+            
+        json_deltas.map(Value::Array)
     }
 
     /// Convert a Yrs delta to JSON
@@ -76,7 +42,7 @@ impl Conversion {
                 if let Some(attributes) = attrs {
                     let attrs_json: JsonMap<String, Value> = attributes
                         .iter()
-                        .map(|(k, v)| (k.to_string(), Self::yrs_any_to_json(v)))
+                        .map(|(k, v)| (k.to_string(), Self::any_to_json(v)))
                         .collect();
                     
                     map.insert("attributes".to_string(), Value::Object(attrs_json));
@@ -91,7 +57,7 @@ impl Conversion {
                 if let Some(attributes) = attrs {
                     let attrs_json: JsonMap<String, Value> = attributes
                         .iter()
-                        .map(|(k, v)| (k.to_string(), Self::yrs_any_to_json(v)))
+                        .map(|(k, v)| (k.to_string(), Self::any_to_json(v)))
                         .collect();
                     
                     map.insert("attributes".to_string(), Value::Object(attrs_json));
@@ -106,18 +72,54 @@ impl Conversion {
             }
         }
     }
-
-    /// Convert a sequence of deltas to JSON array
-    pub fn deltas_to_json<T: ReadTxn>(
-        txn: &T,
-        deltas: Vec<Delta<yrs::Out>>
-    ) -> Result<Value, CustomRustError> {
-        let json_deltas: Result<Vec<Value>, CustomRustError> = deltas
-            .into_iter()
-            .map(|delta| Self::delta_to_json(txn, delta))
-            .collect();
-            
-        json_deltas.map(Value::Array)
+    
+    /// Convert a yjs Any value to JSON
+    pub fn any_to_json(any: &yrs::Any) -> Value {
+        match any {
+            yrs::Any::Null => Value::Null,
+            yrs::Any::Undefined => Value::Null,
+            yrs::Any::Bool(b) => Value::Bool(*b),
+            yrs::Any::Number(n) => {
+                Value::Number(serde_json::Number::from_f64(*n).unwrap_or(0.into()))
+            }
+            yrs::Any::String(s) => Value::String(s.to_string()),
+            yrs::Any::Array(arr) => Value::Array(arr.iter().map(Self::any_to_json).collect()),
+            yrs::Any::Map(map) => Value::Object(
+                map.iter()
+                    .map(|(k, v)| (k.to_string(), Self::any_to_json(v)))
+                    .collect()
+            ),
+            yrs::Any::BigInt(i) => Value::Number((*i).into()),
+            yrs::Any::Buffer(_) => Value::String("<buffer>".to_string()),
+        }
+    }
+    
+    /// Convert JSON value to yjs Any
+    pub fn json_value_to_yrs_any(val: &Value) -> yrs::Any {
+        match val {
+            Value::Null => yrs::Any::Null,
+            Value::Bool(b) => yrs::Any::Bool(*b),
+            Value::Number(n) => {
+                if let Some(i) = n.as_i64() {
+                    yrs::Any::Number(i as f64)
+                } else if let Some(f) = n.as_f64() {
+                    yrs::Any::Number(f)
+                } else {
+                    yrs::Any::Undefined
+                }
+            }
+            Value::String(s) => yrs::Any::String(Arc::from(s.as_str())),
+            Value::Array(arr) => yrs::Any::Array(
+                Arc::from(arr.iter().map(Self::json_value_to_yrs_any).collect::<Vec<_>>())
+            ),
+            Value::Object(obj) => yrs::Any::Map(
+                Arc::from(
+                    obj.iter()
+                        .map(|(k, v)| (k.clone(), Self::json_value_to_yrs_any(v)))
+                        .collect::<HashMap<_, _>>()
+                )
+            ),
+        }
     }
 
     
