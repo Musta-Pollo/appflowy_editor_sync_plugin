@@ -184,3 +184,9 @@ Main files or folders are listed bellow:
     - `document_rules` - Validates the new editor state and if neccessary fixes it.
   - `core` - Helper structures batching and update clock.
   - `src/rust` - Contains generted code by flutter_rust_bridge.
+
+## How to run demo
+
+1. Setup Flutter on local system
+2. `cd example`
+3. `flutter run`
